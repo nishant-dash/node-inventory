@@ -10,42 +10,42 @@ import (
 	"strings"
 )
 
-type NetworkDeviceConfiguration struct {
-	Driver          string `json:"driver"`
-	DriverVersion   string `json:"driverversion"`
-	FirmwareVersion string `json:"firmware"`
-	Link            string `json:"link"`
-}
-
 type NetworkDevice struct {
-	ID            string                     `json:"id"`
-	Product       string                     `json:"product"`
-	Vendor        string                     `json:"vendor"`
-	Description   string                     `json:"description"`
-	PhysID        string                     `json:"physid"`
-	BusInfo       string                     `json:"businfo"`
-	LogicalName   string                     `json:"logicalname"`
-	Configuration NetworkDeviceConfiguration `json:"configuration"`
+	Device
+	numVFs      int
+	maxVFs      int
+	isPF        bool
+	devlinkMode string
 }
 
-func getVFInfoByInterface(ifName string) (numVFs, maxVFs int, isPF bool, err error) {
-	basePath := filepath.Join("/sys/class/net", ifName, "device")
+type DevlinkOutput struct {
+	Dev map[string]DevlinkInfo `json:"dev"`
+}
+
+type DevlinkInfo struct {
+	Mode       string `json:"mode"`
+	InlineMode string `json:"inline_mode"`
+	EncapMode  string `json:"encap_mode"`
+}
+
+func (nd *NetworkDevice) getVFInfoByInterface() (err error) {
+	basePath := filepath.Join("/sys/class/net", nd.LogicalName, "device")
 
 	if data, err := os.ReadFile(filepath.Join(basePath, "sriov_totalvfs")); err == nil {
-		isPF = true
-		maxVFs, _ = strconv.Atoi(strings.TrimSpace(string(data)))
+		nd.isPF = true
+		nd.maxVFs, _ = strconv.Atoi(strings.TrimSpace(string(data)))
 	}
 
 	if data, err := os.ReadFile(filepath.Join(basePath, "sriov_numvfs")); err == nil {
-		numVFs, _ = strconv.Atoi(strings.TrimSpace(string(data)))
+		nd.numVFs, _ = strconv.Atoi(strings.TrimSpace(string(data)))
 	}
 
-	return
+	return err
 }
 
-func getDevLinkMode(devicePCI string) (string, error) {
-	formattedPCI := strings.Replace(devicePCI, "@", "/", 1)
-	cmd := exec.Command("devlink", "dev", "eswitch", "show", formattedPCI)
+func (nd *NetworkDevice) getDevLinkMode() (err error) {
+	formattedPCI := strings.Replace(nd.BusInfo, "@", "/", 1)
+	cmd := exec.Command("devlink", "-j", "dev", "eswitch", "show", formattedPCI)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		logger.Error(
@@ -54,45 +54,72 @@ func getDevLinkMode(devicePCI string) (string, error) {
 			"output", string(out),
 			"businfo", formattedPCI,
 		)
+		nd.devlinkMode = "unknown"
+	} else {
+		var dlOutput DevlinkOutput
+		if err := json.Unmarshal(out, &dlOutput); err != nil {
+			logger.Error(
+				"Error parsing devlink json output",
+				"error", err,
+				"output", string(out),
+			)
+			return err
+		}
+		nd.devlinkMode = dlOutput.Dev[formattedPCI].Mode
 	}
-	return string(out), err
+
+	return err
 }
 
-func NIC() error {
-	out, err := exec.Command("lshw", "-c", "net", "-json").Output()
+func NIC() {
+	devices, err := getDevices("net")
 	if err != nil {
-		logger.Debug("Error executing lshw command", "error", err)
-		return err
+		logger.Info("No network devices found exiting NIC collection", "error", err)
+		return
 	}
 
-	var devices []NetworkDevice
-	if err := json.Unmarshal(out, &devices); err != nil {
-		logger.Debug("Error parsing lshw output", "error", err)
-		return err
+	networkDevices := make([]NetworkDevice, len(devices))
+	for i, device := range devices {
+		networkDevices[i] = NetworkDevice{Device: device}
 	}
-	for _, device := range devices {
-		if device.Configuration.Link == "yes" {
-			devlinkMode, err := getDevLinkMode(device.BusInfo)
+
+	for _, nd := range networkDevices {
+		if nd.Configuration.Link == "yes" {
+			err := nd.getDevLinkMode()
 			if err != nil {
-				devlinkMode = "unknown"
+				logger.Error(
+					"Error getting devlink information",
+					"interface", nd.LogicalName,
+					"error", err,
+				)
+			}
+
+			err = nd.getVFInfoByInterface()
+			if err != nil {
+				logger.Error(
+					"Error getting VF information",
+					"interface", nd.LogicalName,
+					"error", err,
+				)
 			}
 
 			logger.Info(
 				"",
 				"component", "nic",
-				"id", device.ID,
-				"product", device.Product,
-				"vendor", device.Vendor,
-				"description", device.Description,
-				"businfo", device.BusInfo,
-				"logicalname", device.LogicalName,
-				"driver", device.Configuration.Driver,
-				"driverversion", device.Configuration.DriverVersion,
-				"firmware", device.Configuration.FirmwareVersion,
-				"mode", devlinkMode,
+				"id", nd.ID,
+				"product", nd.Product,
+				"vendor", nd.Vendor,
+				"description", nd.Description,
+				"businfo", nd.BusInfo,
+				"logicalname", nd.LogicalName,
+				"driver", nd.Configuration.Driver,
+				"driverversion", nd.Configuration.DriverVersion,
+				"firmware", nd.Configuration.FirmwareVersion,
+				"mode", nd.devlinkMode,
+				"num_vfs", nd.numVFs,
+				"max_vfs", nd.maxVFs,
+				"is_pf", nd.isPF,
 			)
 		}
 	}
-
-	return nil
 }

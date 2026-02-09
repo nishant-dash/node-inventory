@@ -19,14 +19,10 @@ func main() {
 	logger.Info("Starting collection")
 
 	logger.Info("Collecting kernel information")
-	if err := collectors.Kernel(); err != nil {
-		logger.Error("Kernel collection failed", "error", err)
-	}
+	collectors.Kernel()
 
 	logger.Info("Collecting NIC information")
-	if err := collectors.NIC(); err != nil {
-		logger.Error("NIC collection failed", "error", err)
-	}
+	collectors.NIC()
 
 	logger.Info("Finished collection")
 }
