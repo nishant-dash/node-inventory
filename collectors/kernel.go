@@ -57,7 +57,7 @@ func Kernel() {
 	getKernelInfo(&kinfo)
 	getKdumpInfo(&kinfo)
 	logger.Info(
-		"",
+		"Collection complete",
 		"component", "kernel",
 		"sysname", kinfo.Sysname,
 		"release", kinfo.Release,

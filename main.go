@@ -24,5 +24,8 @@ func main() {
 	logger.Info("Collecting NIC information")
 	collectors.NIC()
 
+	logger.Info("Collecting CPU information")
+	collectors.CPU()
+
 	logger.Info("Finished collection")
 }

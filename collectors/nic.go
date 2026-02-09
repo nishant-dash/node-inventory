@@ -104,7 +104,7 @@ func NIC() {
 			}
 
 			logger.Info(
-				"",
+				"Collection complete",
 				"component", "nic",
 				"id", nd.ID,
 				"product", nd.Product,
