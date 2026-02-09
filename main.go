@@ -27,5 +27,8 @@ func main() {
 	logger.Info("Collecting CPU information")
 	collectors.CPU()
 
+	logger.Info("Collecting Memory information")
+	collectors.Memory()
+
 	logger.Info("Finished collection")
 }

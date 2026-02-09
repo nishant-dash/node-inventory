@@ -25,8 +25,9 @@ type Device struct {
 	Configuration DeviceConfiguration `json:"configuration"`
 }
 
-func getDevices(class string) ([]Device, error) {
-	var devices []Device
+// Generic version that can unmarshal into any struct type
+func getDevicesTyped[T any](class string) ([]T, error) {
+	var devices []T
 	cmdArgs := []string{"lshw", "-c", class, "-json"}
 
 	out, err := exec.Command(cmdArgs[0], cmdArgs[1:]...).Output()
@@ -37,11 +38,16 @@ func getDevices(class string) ([]Device, error) {
 			"error", err,
 			"output", string(out),
 		)
-		return []Device{}, err
+		return []T{}, err
 	}
 	if err := json.Unmarshal(out, &devices); err != nil {
 		logger.Error("Error parsing lshw output", "error", err, "output", string(out))
-		return []Device{}, err
+		return []T{}, err
 	}
 	return devices, nil
+}
+
+// Convenience function that defaults to Device struct
+func getDevices(class string) ([]Device, error) {
+	return getDevicesTyped[Device](class)
 }
